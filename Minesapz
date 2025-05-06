@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mines Game - Wallet Edition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #4b0082, #8a2be2);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 10px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin: 10px 0;
+      background: linear-gradient(to right, #ff9a9e, #fad0c4);
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .hidden { display: none; }
+
+    input, button {
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: none;
+      margin: 5px;
+    }
+
+    button {
+      background: linear-gradient(135deg, #6e00ff, #9e00ff);
+      color: white;
+      cursor: pointer;
+    }
+
+    #walletBalance {
+      font-size: 16px;
+      margin-bottom: 5px;
+    }
+
+    #controls, #addMoneySection {
+      margin: 10px 0;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    #game {
+      display: grid;
+      grid-template-columns: repeat(5, 48px);
+      gap: 8px;
+      justify-content: center;
+      margin-top: 10px;
+    }
+
+    .tile {
+      width: 48px;
+      height: 48px;
+      background-color: #1e1e1e;
+      border: 2px solid #888;
+      font-size: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    .tile.revealed {
+      background-color: #333;
+    }
+
+    #popup {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      background: white;
+      color: black;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+      font-size: 20px;
+      font-weight: bold;
+      z-index: 999;
+      text-align: center;
+      transition: transform 0.4s ease, opacity 0.3s ease;
+      opacity: 0;
+    }
+
+    #popup.show {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+
+    #message, #status {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Mines Game</h1>
+
+  <div id="loginScreen">
+    <input type="text" id="usernameInput" placeholder="Enter username" />
+    <button onclick="login()">Login</button>
+  </div>
+
+  <div id="walletScreen" class="hidden">
+    <p>Welcome, <span id="userDisplay"></span></p>
+    <p id="walletBalance"></p>
+    <button onclick="showAddMoney()">Add Money</button>
+    <div id="addMoneySection" class="hidden">
+      <p>Send money to <b>9085553337@fam</b></p>
+      <input type="number" id="amountAdded" placeholder="Amount Paid" />
+      <button onclick="confirmPayment()">I have paid</button>
+    </div>
+
+    <div id="controls">
+      <input type="number" id="betAmount" placeholder="Bet ₹" min="1" />
+      <button onclick="startGame()">Start Game</button>
+      <button onclick="cashOut()" id="cashoutBtn" disabled>Cash Out</button>
+    </div>
+
+    <div id="gameArea">
+      <div id="game"></div>
+      <p id="message"></p>
+      <p id="status"></p>
+    </div>
+  </div>
+
+  <div id="popup"></div>
+
+  <!-- Sounds -->
+  <audio id="diamondSound" src="https://assets.mixkit.co/sfx/preview/mixkit-bonus-earned-in-video-game-2058.mp3"></audio>
+  <audio id="bombSound" src="https://assets.mixkit.co/sfx/preview/mixkit-arcade-retro-game-over-213.wav"></audio>
+  <audio id="winSound" src="https://assets.mixkit.co/sfx/preview/mixkit-winning-notification-2018.mp3"></audio>
+
+  <script>
+    let username = '';
+    const diamondSfx = document.getElementById('diamondSound');
+    const bombSfx = document.getElementById('bombSound');
+    const winSfx = document.getElementById('winSound');
+
+    function login() {
+      username = document.getElementById("usernameInput").value.trim();
+      if (!username) return alert("Enter username");
+      localStorage.setItem("username", username);
+      if (!localStorage.getItem("wallet_" + username)) {
+        localStorage.setItem("wallet_" + username, "0");
+      }
+      showWallet();
+    }
+
+    function showWallet() {
+      document.getElementById("loginScreen").classList.add("hidden");
+      document.getElementById("walletScreen").classList.remove("hidden");
+      document.getElementById("userDisplay").textContent = username;
+      updateWalletDisplay();
+    }
+
+    function updateWalletDisplay() {
+      const balance = localStorage.getItem("wallet_" + username);
+      document.getElementById("walletBalance").textContent = `Wallet Balance: ₹${balance}`;
+    }
+
+    function showAddMoney() {
+      document.getElementById("addMoneySection").classList.toggle("hidden");
+    }
+
+    function confirmPayment() {
+      let amt = parseInt(document.getElementById("amountAdded").value);
+      if (isNaN(amt) || amt < 1) return alert("Enter valid amount");
+      let current = parseInt(localStorage.getItem("wallet_" + username) || "0");
+      localStorage.setItem("wallet_" + username, current + amt);
+      updateWalletDisplay();
+      document.getElementById("amountAdded").value = "";
+      showAddMoney();
+      alert("Amount added. Please verify UPI payment.");
+    }
+
+    // Game
+    const gridSize = 5, mineCount = 5;
+    let mines = [], revealed = [], gameOver = false, bet = 0, diamondsFound = 0, multiplier = 1;
+
+    function startGame() {
+      bet = parseInt(document.getElementById("betAmount").value);
+      if (isNaN(bet) || bet < 1) return alert("Minimum bet is ₹1");
+
+      let wallet = parseInt(localStorage.getItem("wallet_" + username));
+      if (wallet < bet) return alert("Insufficient balance");
+
+      localStorage.setItem("wallet_" + username, wallet - bet);
+      updateWalletDisplay();
+
+      const game = document.getElementById("game");
+      game.innerHTML = "";
+      mines = [], revealed = [], diamondsFound = 0, multiplier = 1, gameOver = false;
+
+      document.getElementById("message").textContent = "";
+      document.getElementById("status").textContent = "";
+      document.getElementById("cashoutBtn").disabled = false;
+      hidePopup();
+
+      while (mines.length < mineCount) {
+        const index = Math.floor(Math.random() * gridSize * gridSize);
+        if (!mines.includes(index)) mines.push(index);
+      }
+
+      for (let i = 0; i < gridSize * gridSize; i++) {
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.addEventListener("click", () => revealTile(tile, i));
+        game.appendChild(tile);
+      }
+
+      updateStatus();
+    }
+
+    function revealTile(tile, index) {
+      if (gameOver || revealed.includes(index)) return;
+      revealed.push(index);
+
+      if (mines.includes(index)) {
+        tile.textContent = "💣";
+        tile.style.backgroundColor = "#ff3b3b";
+        bombSfx.play();
+        document.getElementById("message").textContent = "Boom! You hit a mine.";
+        gameOver = true;
+        document.getElementById("cashoutBtn").disabled = true;
+        revealAllMines();
+      } else {
+        tile.textContent = "💎";
+        tile.classList.add("revealed");
+        diamondsFound++;
+        diamondSfx.play();
+        multiplier = (1 + diamondsFound * 0.8).toFixed(2);
+        updateStatus();
+      }
+    }
+
+    function cashOut() {
+      if (gameOver || diamondsFound === 0) return;
+      const winnings = Math.floor(bet * multiplier);
+      let wallet = parseInt(localStorage.getItem("wallet_" + username));
+      localStorage.setItem("wallet_" + username, wallet + winnings);
+      updateWalletDisplay();
+
+      document.getElementById("message").textContent = `You cashed out ₹${winnings}!`;
+      document.getElementById("cashoutBtn").disabled = true;
+      gameOver = true;
+      winSfx.play();
+      showPopup(`Congratulations! You won ₹${winnings}`);
+      revealAllMines();
+    }
+
+    function revealAllMines() {
+      const tiles = document.querySelectorAll(".tile");
+      mines.forEach(index => {
+        tiles[index].textContent = "💣";
+        tiles[index].style.backgroundColor = "#ff3b3b";
+      });
+    }
+
+    function updateStatus() {
+      const winnings = Math.floor(bet * multiplier);
+      document.getElementById("status").textContent =
+        `Diamonds: ${diamondsFound} | Multiplier: x${multiplier} | Potential: ₹${winnings}`;
+    }
+
+    function showPopup(msg) {
+      const popup = document.getElementById("popup");
+      popup.textContent = msg;
+      popup.classList.add("show");
+    }
+
+    function hidePopup() {
+      document.getElementById("popup").classList.remove("show");
+    }
+
+    window.onload = () => {
+      const stored = localStorage.getItem("username");
+      if (stored) {
+        username = stored;
+        showWallet();
+      }
+
+      // Unlock sound on first tap
+      document.body.addEventListener("click", () => {
+        diamondSfx.play().catch(() => {});
+        bombSfx.play().catch(() => {});
+        winSfx.play().catch(() => {});
+      }, { once: true });
+    };
+  </script>
+</body>
+</html>
